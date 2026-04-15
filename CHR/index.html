@@ -1100,7 +1100,7 @@
       </div>
 
       <div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px;margin:10px 0;font-size:0.78rem;color:#713f12;">
-        ⏳ Your account will be reviewed and approved by the RHU admin within 1–3 business days.
+        ⏳ Your account will be reviewed by the RHU admin. You will be notified once approved.
       </div>
 
       <button class="btn-signup" onclick="doRegister('healthworker')" style="background:linear-gradient(135deg,#166534,#15803d);">Submit for Approval</button>
@@ -1312,7 +1312,7 @@
 
         <!-- HW DASHBOARD -->
         <div class="view active" id="hw-view-dashboard">
-          <div class="greeting">Hello, Nurse xxxx 👋</div>
+          <div class="greeting" id="hw-greeting">Hello, Health Worker 👋</div>
           <div class="greeting-sub" id="hw-date">Sunday, April 12, 2026</div>
           <div class="card">
             <div class="card-title">🔴 Recent Patients</div>
@@ -1487,12 +1487,16 @@
 
   // Demo credentials
   const DEMO = {
-    resident: { email: 'maria@email.com', pw: 'resident123' },
-    healthworker: { email: 'nurse@bhrs.gov', pw: 'health123' }
+    resident: { email: 'maria@email.com', pw: 'resident123', name: 'Maria Santos' },
+    healthworker: { email: 'nurse@bhrs.gov', pw: 'health123', name: 'Nurse Demo' }
   };
+
+  // In-memory user store (persists until page refresh)
+  const registeredUsers = [];
 
   // ===================== INIT =====================
   window.onload = () => {
+    window._currentResidentName = 'Maria Santos';
     setTimeout(() => {
       document.getElementById('loading-screen').style.display = 'none';
       showScreen('login');
@@ -1555,18 +1559,25 @@
     if (!pw) { pErr.style.display = 'block'; document.getElementById('login-pw').classList.add('field-error'); valid = false; }
     if (!valid) return;
 
-    // Demo auth — Rule 5: Error handling with clear messages
+    // Check demo accounts first, then registered users
     const cred = DEMO[type];
+    let matchedUser = null;
     if (email === cred.email && pw === cred.pw) {
-      currentUser = type;
-      showToast('Login successful! Welcome 👋');
+      matchedUser = { name: cred.name, type: type, isNew: false };
+    } else {
+      const found = registeredUsers.find(u => u.email === email && u.pw === pw && u.type === type);
+      if (found) matchedUser = found;
+    }
+    if (matchedUser) {
+      currentUser = { type: matchedUser.type, name: matchedUser.name, isNew: matchedUser.isNew || false };
+      applyUserToUI(currentUser);
+      showToast('Login successful! Welcome, ' + matchedUser.name + ' 👋');
       document.getElementById('loading-screen').style.display = 'flex';
       setTimeout(() => {
         document.getElementById('loading-screen').style.display = 'none';
-        showScreen(type === 'resident' ? 'resident' : 'healthworker');
+        showScreen(matchedUser.type === 'resident' ? 'resident' : 'healthworker');
       }, 1000);
     } else {
-      // Helpful error message — Rule 5
       showToast('❌ Invalid credentials. Try: ' + (type==='resident'?'maria@email.com / resident123':'nurse@bhrs.gov / health123'));
       document.getElementById('login-email').classList.add('field-error');
       document.getElementById('login-pw').classList.add('field-error');
@@ -1575,12 +1586,14 @@
 
   function bioLogin(method) {
     const type = document.getElementById('login-type').value;
+    const cred = DEMO[type];
     showToast(method + ' verified! Logging in as ' + (type === 'healthworker' ? 'Health Worker' : 'Resident') + '…');
     setTimeout(() => {
       document.getElementById('loading-screen').style.display = 'flex';
       setTimeout(() => {
         document.getElementById('loading-screen').style.display = 'none';
-        currentUser = type;
+        currentUser = { type: type, name: cred.name, isNew: false };
+        applyUserToUI(currentUser);
         showScreen(type === 'healthworker' ? 'healthworker' : 'resident');
       }, 900);
     }, 600);
@@ -1739,12 +1752,22 @@
       if (!prc) { prcErr.style.display = 'block'; document.getElementById('h-prc-num').classList.add('field-error'); ok = false; } else { prcErr.style.display = 'none'; }
       if (!biometricState.h_face) { faceErr.style.display = 'block'; ok = false; } else { faceErr.style.display = 'none'; }
       if (!ok) return;
+      // Save health worker account
+      const name = document.getElementById('h-name').value.trim();
+      const email = document.getElementById('h-email').value.trim();
+      const pw = document.getElementById('h-pw').value;
+      registeredUsers.push({ type: 'healthworker', name, email, pw, isNew: true });
       showToast('✅ Submitted! Account pending RHU admin approval.');
     } else {
       const faceErr = document.getElementById('r-face-err');
       if (!biometricState.r_face) { faceErr.style.display = 'block'; return; }
       faceErr.style.display = 'none';
-      showToast('✅ Account created successfully! Please log in.');
+      // Save resident account
+      const name = document.getElementById('r-name').value.trim();
+      const email = document.getElementById('r-email').value.trim();
+      const pw = document.getElementById('r-pw').value;
+      registeredUsers.push({ type: 'resident', name, email, pw, isNew: true });
+      showToast('✅ Account created! You can now log in with your email and password.');
     }
     setTimeout(() => { goToLogin(); }, 2000);
   }
@@ -1953,7 +1976,7 @@
       <div class="confirm-row"><span>📅 Date:</span><strong>${date}</strong></div>
       <div class="confirm-row"><span>🕘 Time:</span><strong>${time}</strong></div>
       <div class="confirm-row"><span>📋 Purpose:</span><strong>${purpose}</strong></div>
-      <div class="confirm-row"><span>👤 Patient:</span><strong>Maria Santos</strong></div>
+      <div class="confirm-row"><span>👤 Patient:</span><strong>${window._currentResidentName || 'Maria Santos'}</strong></div>
     `;
     openModal('book-confirm-modal');
   }
@@ -1994,6 +2017,52 @@
       document.getElementById('login-email').value = '';
       document.getElementById('login-pw').value = '';
     }, 900);
+  }
+
+  // ===================== APPLY USER TO UI =====================
+  function applyUserToUI(user) {
+    const firstName = user.name.split(' ')[0];
+    if (user.type === 'resident') {
+      // Greeting
+      const greet = document.getElementById('res-greeting');
+      if (greet) greet.textContent = 'Hello, ' + firstName + ' 👋';
+      // Header badge
+      const badge = document.getElementById('resident-badge');
+      if (badge) badge.textContent = user.name;
+      if (user.isNew) {
+        // New account: clear records table
+        const recTbody = document.querySelector('#res-view-dashboard table tbody');
+        if (recTbody) recTbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:16px;">No records yet.</td></tr>';
+        // Clear appointment list
+        const apptList = document.getElementById('appt-list');
+        if (apptList) apptList.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:16px;">No appointments yet.</td></tr>';
+        // Clear profile
+        const profileName = document.querySelector('#res-view-profile .profile-name');
+        if (profileName) profileName.textContent = user.name;
+        const profileMeta = document.querySelector('#res-view-profile .profile-meta');
+        if (profileMeta) profileMeta.textContent = 'Age: — | Sex: —';
+        const riskTag = document.querySelector('#res-view-profile .risk-tag');
+        if (riskTag) { riskTag.textContent = 'No screening data yet'; riskTag.style.background = '#f1f5f9'; riskTag.style.color = '#64748b'; }
+        // Clear info grid values
+        document.querySelectorAll('#res-view-profile .info-value').forEach(el => { el.textContent = '—'; });
+        // Clear book confirm patient name (inline reference)
+        // Risk panel: show no data
+        const riskBanner = document.querySelector('#res-view-risk .risk-banner');
+        if (riskBanner) riskBanner.innerHTML = '<div class="risk-icon">ℹ️</div><div class="risk-label" style="font-size:1rem;color:var(--muted);">No Risk Data Yet</div>';
+        const riskList = document.querySelectorAll('#res-view-risk .risk-list');
+        riskList.forEach(ul => { ul.innerHTML = '<li style="color:var(--muted);">Complete your health profile first.</li>'; });
+      } else {
+        // Demo account: restore default name
+        const profileName = document.querySelector('#res-view-profile .profile-name');
+        if (profileName) profileName.textContent = 'Maria Santos';
+      }
+    } else {
+      // Health worker
+      const hwGreet = document.getElementById('hw-greeting');
+      if (hwGreet) hwGreet.textContent = 'Hello, ' + user.name + ' 👋';
+    }
+    // Update booking confirm patient name reference
+    window._currentResidentName = user.name;
   }
 
   function sendReset() {
