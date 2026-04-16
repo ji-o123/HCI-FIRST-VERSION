@@ -1403,6 +1403,21 @@
                 <div class="info-item"><div class="info-label">Past Illnesses</div><div class="info-value" id="pd-hist">—</div></div>
                 <div class="info-item"><div class="info-label">Medication</div><div class="info-value" id="pd-med">—</div></div>
               </div>
+
+              <!-- Risk Prediction Section -->
+              <div class="card-title" style="font-size:1rem;margin-top:20px;">⚠️ Risk Prediction</div>
+              <div id="pd-risk-section" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;">
+                <div id="pd-risk-banner" style="display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:10px;font-weight:800;font-size:1rem;min-width:160px;">
+                </div>
+                <div style="flex:1;min-width:200px;">
+                  <div style="font-weight:700;font-size:0.85rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">At Risk Of:</div>
+                  <ul id="pd-risk-list" class="risk-list" style="padding-left:4px;"></ul>
+                </div>
+              </div>
+              <div id="pd-risk-note" style="margin-top:10px;font-size:0.78rem;color:var(--muted);background:#fef9c3;padding:8px 12px;border-radius:8px;display:none;">
+                ℹ️ This prediction is based on the patient's health profile and is <strong>not a diagnosis</strong>.
+              </div>
+
               <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;">
                 <button class="btn-primary" style="width:auto;padding:10px 20px;" onclick="showToast('Appointment booked ✓')">📅 Book Appointment</button>
                 <button class="btn-secondary" onclick="showToast('SMS reminder sent ✓')">📲 Send SMS Reminder</button>
@@ -1481,7 +1496,7 @@
 
 <script>
   // ===================== STATE =====================
-  let currentUser = null; // 'resident' or 'healthworker'
+  let currentUser = null; // { type, name, isNew }
   let selectedApptDate = null;
   let currentRegStep = 1;
 
@@ -1652,12 +1667,19 @@
       err.style.display = 'none'; document.getElementById('r-name').classList.remove('field-error');
     }
     if (step === 2) {
+      const email = document.getElementById('r-email').value.trim();
       const pw = document.getElementById('r-pw').value;
       const pw2 = document.getElementById('r-pw2').value;
       const pwErr = document.getElementById('r-pw2-err');
       const fpErr = document.getElementById('r-fp-err');
       let ok = true;
-      if (!pw || pw !== pw2) { pwErr.style.display = 'block'; ok = false; } else { pwErr.style.display = 'none'; }
+      // Check duplicate email
+      const allEmails = [DEMO.resident.email, DEMO.healthworker.email, ...registeredUsers.map(u => u.email)];
+      if (!email) { pwErr.textContent = 'Email is required.'; pwErr.style.display = 'block'; ok = false; }
+      else if (allEmails.includes(email)) { pwErr.textContent = 'This email is already registered.'; pwErr.style.display = 'block'; ok = false; }
+      else if (!pw || pw.length < 8) { pwErr.textContent = 'Password must be at least 8 characters.'; pwErr.style.display = 'block'; ok = false; }
+      else if (pw !== pw2) { pwErr.textContent = 'Passwords do not match.'; pwErr.style.display = 'block'; ok = false; }
+      else { pwErr.style.display = 'none'; }
       if (!biometricState.r_fp) { fpErr.style.display = 'block'; ok = false; } else { fpErr.style.display = 'none'; }
       if (!ok) return;
     }
@@ -1705,12 +1727,18 @@
       if (!ok) return;
     }
     if (step === 2) {
+      const email = document.getElementById('h-email').value.trim();
       const pw = document.getElementById('h-pw').value;
       const pw2 = document.getElementById('h-pw2').value;
       const pwErr = document.getElementById('h-pw2-err');
       const fpErr = document.getElementById('h-fp-err');
       let ok = true;
-      if (!pw || pw !== pw2) { pwErr.style.display = 'block'; ok = false; } else { pwErr.style.display = 'none'; }
+      const allEmails = [DEMO.resident.email, DEMO.healthworker.email, ...registeredUsers.map(u => u.email)];
+      if (!email) { pwErr.textContent = 'Email is required.'; pwErr.style.display = 'block'; ok = false; }
+      else if (allEmails.includes(email)) { pwErr.textContent = 'This email is already registered.'; pwErr.style.display = 'block'; ok = false; }
+      else if (!pw || pw.length < 8) { pwErr.textContent = 'Password must be at least 8 characters.'; pwErr.style.display = 'block'; ok = false; }
+      else if (pw !== pw2) { pwErr.textContent = 'Passwords do not match.'; pwErr.style.display = 'block'; ok = false; }
+      else { pwErr.style.display = 'none'; }
       if (!biometricState.h_fp) { fpErr.style.display = 'block'; ok = false; } else { fpErr.style.display = 'none'; }
       if (!ok) return;
     }
@@ -1909,6 +1937,15 @@
     });
   }
 
+  // Risk predictions per patient (keyed by name)
+  const PATIENT_RISK = {
+    'Maria Santos':    { level: 'HIGH RISK',   risks: ['Heart Disease', 'High Blood Pressure', 'Stroke'] },
+    'Juan Dela Cruz':  { level: 'HIGH RISK',   risks: ['Diabetes Complications', 'Kidney Disease', 'Neuropathy'] },
+    'Anna Reyes':      { level: 'LOW RISK',    risks: ['Seasonal Infections'] },
+    'Pedro Lim':       { level: 'HIGH RISK',   risks: ['Stroke', 'Heart Failure', 'Kidney Disease'] },
+    'Target Dela Cruz':{ level: 'MODERATE RISK', risks: ['Gestational Diabetes', 'Pre-eclampsia'] },
+  };
+
   function openPatientDetail(name, age, sex, diag, status, bmi, bp, bs, bt, hist, med) {
     showView('hw','patients');
     document.getElementById('patients-list-view').style.display = 'none';
@@ -1927,6 +1964,29 @@
     document.getElementById('pd-bt').textContent = bt;
     document.getElementById('pd-hist').textContent = hist;
     document.getElementById('pd-med').textContent = med;
+
+    // Populate risk prediction section
+    const riskData = PATIENT_RISK[name];
+    const banner = document.getElementById('pd-risk-banner');
+    const list = document.getElementById('pd-risk-list');
+    const note = document.getElementById('pd-risk-note');
+    if (riskData) {
+      const isHigh = riskData.level === 'HIGH RISK';
+      const isMod  = riskData.level === 'MODERATE RISK';
+      banner.innerHTML = (isHigh ? '⚠️' : isMod ? '⚡' : '✅') + ' <span>' + riskData.level + '</span>';
+      banner.style.background = isHigh ? '#fee2e2' : isMod ? '#fef3c7' : '#d1fae5';
+      banner.style.color      = isHigh ? '#991b1b' : isMod ? '#92400e' : '#065f46';
+      banner.style.border     = '1.5px solid ' + (isHigh ? '#fca5a5' : isMod ? '#fde68a' : '#6ee7b7');
+      list.innerHTML = riskData.risks.map(r => `<li><span class="risk-arrow">▶</span> ${r}</li>`).join('');
+      note.style.display = 'block';
+    } else {
+      banner.innerHTML = 'ℹ️ <span>No Risk Data</span>';
+      banner.style.background = '#f1f5f9';
+      banner.style.color = '#64748b';
+      banner.style.border = '1.5px solid #cbd5e1';
+      list.innerHTML = '<li style="color:var(--muted);">No risk assessment available.</li>';
+      note.style.display = 'none';
+    }
   }
 
   function closePatientDetail() {
@@ -2020,6 +2080,25 @@
   }
 
   // ===================== APPLY USER TO UI =====================
+  // Snapshot of original demo resident profile data for restoration
+  const DEMO_RESIDENT_PROFILE = {
+    name: 'Maria Santos',
+    avatar: '👩',
+    meta: 'Age: 30 &nbsp;|&nbsp; Sex: Female',
+    riskTag: '⚠ Screening for Hypertension',
+    riskTagBg: '',
+    riskTagColor: '',
+    infoValues: ['June 17, 1995','O+','25.03','130/80 mmHg','98 mg/dL','12-982XXXXX-XX','Juan Santos (Husband) — 09XXXXXXXXX'],
+    histValues: ['None','Pneumonia (2022)','Losartan 50g (Daily)'],
+    records: `<tr><td>07 May 2025</td><td>Cough and Cold</td><td><span class="badge badge-green">Treated</span></td></tr>
+              <tr><td>07 May 2025</td><td>Headache</td><td><span class="badge badge-green">Treated</span></td></tr>
+              <tr><td>14 May 2025</td><td>Fever</td><td><span class="badge badge-yellow">On Schedule</span></td></tr>`,
+    appointments: `<tr><td>Feb 23, 2026</td><td>09:00 AM</td><td>General Checkup</td><td><span class="badge badge-blue">Scheduled</span></td></tr>`,
+    riskBanner: `<div class="risk-icon">⚠️</div><div class="risk-label">HIGH RISK</div>`,
+    riskAtList: '<li><span class="risk-arrow">▶</span> Heart disease</li><li><span class="risk-arrow">▶</span> High blood pressure</li><li><span class="risk-arrow">▶</span> Stroke</li>',
+    riskRecoList: '<li><span class="reco-arrow">▶</span> Lifestyle Changes</li><li><span class="reco-arrow">▶</span> Consult RHU</li><li><span class="reco-arrow">▶</span> Regular Monitoring</li>'
+  };
+
   function applyUserToUI(user) {
     const firstName = user.name.split(' ')[0];
     if (user.type === 'resident') {
@@ -2029,40 +2108,73 @@
       // Header badge
       const badge = document.getElementById('resident-badge');
       if (badge) badge.textContent = user.name;
+      // Update booking confirm patient name reference
+      window._currentResidentName = user.name;
+
       if (user.isNew) {
-        // New account: clear records table
+        // ---- New account: show empty state ----
         const recTbody = document.querySelector('#res-view-dashboard table tbody');
         if (recTbody) recTbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:16px;">No records yet.</td></tr>';
-        // Clear appointment list
+
         const apptList = document.getElementById('appt-list');
         if (apptList) apptList.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:16px;">No appointments yet.</td></tr>';
-        // Clear profile
+
+        const profileAvatar = document.querySelector('#res-view-profile .profile-avatar');
+        if (profileAvatar) profileAvatar.textContent = '👤';
         const profileName = document.querySelector('#res-view-profile .profile-name');
         if (profileName) profileName.textContent = user.name;
         const profileMeta = document.querySelector('#res-view-profile .profile-meta');
         if (profileMeta) profileMeta.textContent = 'Age: — | Sex: —';
         const riskTag = document.querySelector('#res-view-profile .risk-tag');
         if (riskTag) { riskTag.textContent = 'No screening data yet'; riskTag.style.background = '#f1f5f9'; riskTag.style.color = '#64748b'; }
-        // Clear info grid values
-        document.querySelectorAll('#res-view-profile .info-value').forEach(el => { el.textContent = '—'; });
-        // Clear book confirm patient name (inline reference)
-        // Risk panel: show no data
+
+        // Clear personal info grid
+        const infoItems = document.querySelectorAll('#res-view-profile .info-grid:first-of-type .info-value');
+        infoItems.forEach(el => { el.textContent = '—'; });
+        // Clear medical history grid
+        const histItems = document.querySelectorAll('#res-view-profile .info-grid:last-of-type .info-value');
+        histItems.forEach(el => { el.textContent = '—'; });
+
+        // Risk panel: no data state
         const riskBanner = document.querySelector('#res-view-risk .risk-banner');
         if (riskBanner) riskBanner.innerHTML = '<div class="risk-icon">ℹ️</div><div class="risk-label" style="font-size:1rem;color:var(--muted);">No Risk Data Yet</div>';
-        const riskList = document.querySelectorAll('#res-view-risk .risk-list');
-        riskList.forEach(ul => { ul.innerHTML = '<li style="color:var(--muted);">Complete your health profile first.</li>'; });
+        const riskLists = document.querySelectorAll('#res-view-risk .risk-list');
+        riskLists.forEach(ul => { ul.innerHTML = '<li style="color:var(--muted);">Complete your health profile first.</li>'; });
+
       } else {
-        // Demo account: restore default name
+        // ---- Demo account: restore original data ----
+        const d = DEMO_RESIDENT_PROFILE;
+        const recTbody = document.querySelector('#res-view-dashboard table tbody');
+        if (recTbody) recTbody.innerHTML = d.records;
+
+        const apptList = document.getElementById('appt-list');
+        if (apptList) apptList.innerHTML = d.appointments;
+
+        const profileAvatar = document.querySelector('#res-view-profile .profile-avatar');
+        if (profileAvatar) profileAvatar.textContent = d.avatar;
         const profileName = document.querySelector('#res-view-profile .profile-name');
-        if (profileName) profileName.textContent = 'Maria Santos';
+        if (profileName) profileName.textContent = d.name;
+        const profileMeta = document.querySelector('#res-view-profile .profile-meta');
+        if (profileMeta) profileMeta.innerHTML = d.meta;
+        const riskTag = document.querySelector('#res-view-profile .risk-tag');
+        if (riskTag) { riskTag.textContent = d.riskTag; riskTag.style.background = ''; riskTag.style.color = ''; }
+
+        const infoItems = document.querySelectorAll('#res-view-profile .info-grid:first-of-type .info-value');
+        d.infoValues.forEach((v, i) => { if (infoItems[i]) infoItems[i].textContent = v; });
+        const histItems = document.querySelectorAll('#res-view-profile .info-grid:last-of-type .info-value');
+        d.histValues.forEach((v, i) => { if (histItems[i]) histItems[i].textContent = v; });
+
+        const riskBanner = document.querySelector('#res-view-risk .risk-banner');
+        if (riskBanner) riskBanner.innerHTML = d.riskBanner;
+        const riskLists = document.querySelectorAll('#res-view-risk .risk-list');
+        if (riskLists[0]) riskLists[0].innerHTML = d.riskAtList;
+        if (riskLists[1]) riskLists[1].innerHTML = d.riskRecoList;
       }
     } else {
-      // Health worker
+      // ---- Health worker ----
       const hwGreet = document.getElementById('hw-greeting');
       if (hwGreet) hwGreet.textContent = 'Hello, ' + user.name + ' 👋';
     }
-    // Update booking confirm patient name reference
-    window._currentResidentName = user.name;
   }
 
   function sendReset() {
